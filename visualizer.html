@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Visualizer</title>
+    <style>
+        canvas {
+            max-width: 1000px; /* Or any other width you see fit */
+            margin: 0 auto; /* Center the canvas */
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <button onclick="addTrackInput()">Add Another Track</button>
+    <div id="tracksContainer"></div>
+    <select id="visualizerTypeDropdown">
+        <option value="vertical">Vertical Bars</option>
+        <option value="horizontal">Horizontal Bars</option>
+        <option value="circularlin">Circular (Linear)</option>
+    </select>
+    <select id="aspectRatioDropdown">
+        <option value="square">Square (1:1)</option>
+        <option value="mobile">Mobile Vertical (9:16)</option>
+        <option value="cinema">Cinema Horizontal (21:9)</option>
+    </select>
+    <div id="colorOptions">
+        <label>Background Color:</label> <br />
+        <input type="color" id="backgroundColor" value="#000000"> <br />
+        <input type="range" id="backgroundAlpha" min="0" max="1" step="0.01" value="1"> <br />
+        
+        <label>Bar/Line Color (low):</label> <br />
+        <input type="color" id="lowColor" value="#FF0000"> <br />
+        <input type="range" id="lowAlpha" min="0" max="1" step="0.01" value="1"> <br />
+        
+        <label>Bar/Line Color (high):</label> <br />
+        <input type="color" id="highColor" value="#FF0000"> <br />
+        <input type="range" id="highAlpha" min="0" max="1" step="0.01" value="1"> <br />
+    </div>
+    <button id="toggleRecord" onclick="toggleRecording()">Start Recording</button>
+    <a id="downloadLink" href="#">Download Video</a>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        let audioElements = [];
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioDestination = audioContext.createMediaStreamDestination();
+        let audioBuffer;
+        let audioAnalysers = [];
+        let dataArrays = [];
+        let isRecording = false;
+        let chunks = [];
+        let mediaRecorder;
+
+        // COLORS
+        const backgroundColorPicker = document.getElementById('backgroundColor');
+        const backgroundAlphaSlider = document.getElementById('backgroundAlpha');
+        const highColorPicker = document.getElementById('highColor');
+        const highAlphaSlider = document.getElementById('highAlpha');
+        const lowColorPicker = document.getElementById('lowColor');
+        const lowAlphaSlider = document.getElementById('lowAlpha');
+
+        function addTrackInput() {
+            const trackContainer = document.createElement('div');
+
+            const newTrackInput = document.createElement('input');
+            newTrackInput.type = 'file';
+            newTrackInput.accept = 'audio/*';
+            newTrackInput.className = 'audioTrack'; // Added a class for easy reference
+            newTrackInput.addEventListener('change', handleFileChange);
+            trackContainer.appendChild(newTrackInput);
+
+            const volumeSlider = document.createElement('input');
+            volumeSlider.type = 'range';
+            volumeSlider.min = 0;
+            volumeSlider.max = 1;
+            volumeSlider.step = 0.01;
+            volumeSlider.value = 1;
+
+            volumeSlider.addEventListener('input', function() {
+                const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
+                if (audioElements[audioIndex]) {
+                    audioElements[audioIndex].volume = volumeSlider.value;
+                }
+                numericVolumeInput.value = volumeSlider.value;
+            });
+            trackContainer.appendChild(volumeSlider);
+
+            
+            const numericVolumeInput = document.createElement('input');
+            numericVolumeInput.type = 'number';
+            numericVolumeInput.min = 0;
+            numericVolumeInput.max = 100;
+            numericVolumeInput.step = 1;
+            numericVolumeInput.value = 100;
+    
+            // Update the slider when the numeric input value changes
+            numericVolumeInput.addEventListener('input', function() {
+                volumeSlider.value = numericVolumeInput.value / 100;
+                const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
+                if (audioElements[audioIndex]) {
+                    audioElements[audioIndex].volume = numericVolumeInput.value;
+                }
+            });
+
+            trackContainer.appendChild(numericVolumeInput);
+
+            document.getElementById('tracksContainer').appendChild(trackContainer);
+        }
+
+        function handleFileChange(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const audioIndex = [...event.target.parentNode.parentNode.children].indexOf(event.target.parentNode);
+                while (audioElements.length < audioIndex + 1) {
+                    const newAudioElement = new Audio();
+                    audioElements.push(newAudioElement);
+                }
+                audioElements[audioIndex].src = URL.createObjectURL(file);
+            }
+        }
+
+        async function playMusic() {
+            // Ensure there's selected audio file(s)
+            if (audioElements.length) {
+
+                // start playing them all
+                for (let i = 0; i < audioElements.length; i++) {
+                    const audioElement = audioElements[i];
+
+                    if (audioElement && audioElement.src) {
+                        // Resume the AudioContext first if necessary
+                        if (audioContext.state === "suspended") {
+                            await audioContext.resume();
+                        }
+
+                        // Create or reconnect the analyser
+                        if (!audioAnalysers[i]) {
+                            audioAnalysers[i] = audioContext.createAnalyser();
+                            
+                            const audioSourceNode = audioContext.createMediaElementSource(audioElement);
+
+                            // Connect the source to the analyser for visualization
+                            audioSourceNode.connect(audioAnalysers[i]);
+
+                            // Connect the source directly to the audioDestination for recording
+                            audioSourceNode.connect(audioDestination);
+
+                            // Connect the analyser to the context's destination (speakers) for live playback
+                            audioAnalysers[i].connect(audioContext.destination);
+                        }
+
+                        audioAnalysers[i].fftSize = 256;
+                        const bufferLength = audioAnalysers[i].frequencyBinCount; // Use the correct analyser from the array
+                        dataArrays[i] = new Uint8Array(bufferLength);
+
+                        audioElement.play();
+                    }
+                }
+
+                // Handle aspect ratio for visualization
+                const ratio = document.getElementById('aspectRatioDropdown').value;
+                let width = window.innerWidth;
+                let height = window.innerWidth;
+
+                switch (ratio) {
+                    case 'square':
+                        height = window.innerWidth; // 1:1
+                        break;
+                    case 'mobile':
+                        height = (window.innerWidth * 16) / 9; // 9:16
+                        break;
+                    case 'cinema':
+                        height = (window.innerWidth * 9) / 21; // 21:9
+                        break;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                for (const audioElement of audioElements) {
+                    audioElement.play();
+                }
+
+                animateVisualizer();
+            }
+        }
+        
+        function twoDigitHex(value) {
+            return value.toString(16).padStart(2, '0');
+        }
+
+        function interpolateColors(ratio) {
+            const r1 = parseInt(lowColorPicker.value.slice(1, 3), 16);
+            const g1 = parseInt(lowColorPicker.value.slice(3, 5), 16);
+            const b1 = parseInt(lowColorPicker.value.slice(5, 7), 16);
+
+            const r2 = parseInt(highColorPicker.value.slice(1, 3), 16);
+            const g2 = parseInt(highColorPicker.value.slice(3, 5), 16);
+            const b2 = parseInt(highColorPicker.value.slice(5, 7), 16);
+
+            const r = r1 + (r2 - r1) * ratio;
+            const g = g1 + (g2 - g1) * ratio;
+            const b = b1 + (b2 - b1) * ratio;
+            const a = 255; //(255 * (lowAlphaSlider.value + (highAlphaSlider.value - lowAlphaSlider.value))) * ratio
+
+            return `#${twoDigitHex(Math.floor(r))}${twoDigitHex(Math.floor(g))}${twoDigitHex(Math.floor(b))}${twoDigitHex(Math.floor(a))}`;
+        }
+
+        function animateVisualizer() {
+            let combinedDataArray = [];
+
+            requestAnimationFrame(animateVisualizer);
+
+            // setup combinedDataArrays
+            combinedDataArray = new Uint8Array(dataArrays[0].length).fill(0);
+
+            // collect how many tracks have stopped/finished playing
+            let pausedTracks = 0;
+            for (let i = 0; i < audioElements.length; i++) {
+                if(audioElements[i].paused)
+                {
+                    pausedTracks++;
+                }
+            }
+
+            if(pausedTracks == audioElements.length)
+            {
+                // if all tracks are paused, we do nothing
+                return;
+            }
+
+            for (let i = 0; i < audioElements.length; i++) {
+                if(!audioElements[i].paused)
+                {
+                    audioAnalysers[i].getByteFrequencyData(dataArrays[i]);
+                    for (let j = 0; j < dataArrays[i].length; j++) {
+                        combinedDataArray[j] += dataArrays[i][j] / (audioElements.length - pausedTracks);
+                    }
+                }
+            }
+
+            const bgAlpha = backgroundAlphaSlider.value;
+            ctx.fillStyle = `${backgroundColorPicker.value}${twoDigitHex(Math.floor(bgAlpha * 255))}`;;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const visualizerType = document.getElementById('visualizerTypeDropdown').value;
+            if(visualizerType === "vertical")
+            {
+                
+                const barWidth = (canvas.width / combinedDataArray.length);
+                let x = 0;
+
+                for (let i = 0; i < combinedDataArray.length; i++) {
+                    const heightOfMax = (combinedDataArray[i] / 256);
+                    const barHeight = heightOfMax * canvas.height;
+                    
+                    ctx.fillStyle = interpolateColors(heightOfMax);
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+            }
+            else if(visualizerType === "horizontal")
+            {
+
+                const barHeight = canvas.height / combinedDataArray.length;
+                let y = 0;
+                for (let i = 0; i < combinedDataArray.length; i++) {
+                    const widthOfMax = (combinedDataArray[i] / 256);
+                    const barWidth = widthOfMax * canvas.width;
+                    ctx.fillStyle = interpolateColors(widthOfMax);
+                    ctx.fillRect(0, y, barWidth, barHeight);
+                    y += barHeight + 1;
+                }
+            }
+            else if(visualizerType === "circularlin")
+            {
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const maxRadius = Math.min(centerX, centerY) * 0.8; // This is the maximum potential radius
+                const baseRadius = maxRadius * 0.1; // This sets the base radius as 10% of the maximum radius
+                const barWidth = 2 * Math.PI / combinedDataArray.length;
+                let points = []; 
+                
+                for (let i = 0; i < combinedDataArray.length; i++) {
+                    const heightOfMax = (combinedDataArray[i] / 256);
+                    const barHeight = heightOfMax * (maxRadius - baseRadius); // Subtract baseRadius to make bars smaller at zero volume
+                    const x = centerX + (baseRadius + barHeight) * Math.cos(i * barWidth);
+                    const y = centerY + (baseRadius + barHeight) * Math.sin(i * barWidth);
+                    
+                    points.push({x, y});
+                }
+
+                // Drawing lines between calculated points
+                for(let i = 1; i < points.length; i++) {
+                    const heightOfMax = (combinedDataArray[i] / 256);
+
+                    ctx.beginPath();
+                    ctx.moveTo(points[i-1].x, points[i-1].y);
+                    ctx.lineTo(points[i].x, points[i].y);
+                    ctx.strokeStyle = interpolateColors(heightOfMax);
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                const heightOfMax = (combinedDataArray[0] / 256);
+                ctx.beginPath();
+                ctx.moveTo(points[points.length-1].x, points[points.length-1].y);
+                ctx.lineTo(points[0].x, points[0].y);
+                ctx.strokeStyle = interpolateColors(heightOfMax);
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        function startRecording() {
+            let videoStream = canvas.captureStream(30);  // 30 FPS
+
+            let audioStreams = [];
+            let completedAudios = 0; // To track the number of audios that have ended
+
+            for (let i = 0; i < audioElements.length; i++) {
+                const currentAudio = audioElements[i];
+
+                currentAudio.addEventListener('canplaythrough', function() {
+                    if (!currentAudio._handledCanPlayThrough) { // Ensure the event only triggers once for each audio
+                        const audioStream = currentAudio.captureStream();
+                        audioStreams.push(audioStream);
+
+                        currentAudio.play();
+
+                        currentAudio.addEventListener('ended', function() {
+                            completedAudios += 1;
+                            if (completedAudios === audioElements.length) {
+                                if (isRecording) {
+                                    toggleRecording(); // This will stop the recording
+                                }
+                            }
+
+                            currentAudio.removeEventListener('ended', arguments.callee); // Remove this listener once executed
+                        });
+                    }
+                });
+            }
+
+            const combinedStream = new MediaStream([...videoStream.getTracks(), ...audioDestination.stream.getTracks()]);
+
+            mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size) {
+                    chunks.push(event.data);
+                }
+            };
+            mediaRecorder.onstop = () => {
+                let blob = new Blob(chunks, { type: 'video/webm' });
+                let url = URL.createObjectURL(blob);
+                document.getElementById('downloadLink').href = url;
+                document.getElementById('downloadLink').download = 'visualizer.webm';
+            };
+            mediaRecorder.start();
+
+            // Start the visualizer
+            playMusic();
+            
+            for (let i = 0; i < audioElements.length; i++) {
+                const currentAudio = audioElements[i];
+                currentAudio._handledCanPlayThrough = true;
+            }
+        }
+
+        function toggleRecording() {
+            if (!isRecording) {
+                startRecording();
+                document.getElementById('toggleRecord').textContent = "Stop Recording";
+                isRecording = true;
+            } else {
+                stopRecording();
+                document.getElementById('toggleRecord').textContent = "Start Recording";
+                isRecording = false;
+            }
+        }
+        function stopRecording() {
+            // Stop all the audios if they're playing
+            for (let i = 0; i < audioElements.length; i++) {
+                const audioElement = audioElements[i];
+                if(audioElement) {
+                    audioElement.pause();
+                    audioElement.currentTime = 0; // reset audio playback to start
+                }
+            }
+
+            // Stop mediaRecorder
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        }   
+    </script>
+</body>
+</html>
