@@ -217,7 +217,7 @@
 
             const newTrackInput = document.createElement('input');
             newTrackInput.type = 'file';
-            newTrackInput.accept = 'audio/*';
+            newTrackInput.accept = 'audio/mp3,audio/mpeg,audio/wav';
             newTrackInput.className = 'audioTrack'; // Added a class for easy reference
             newTrackInput.addEventListener('change', handleFileChange);
             trackContainer.appendChild(newTrackInput);
@@ -240,6 +240,16 @@
             numericVolumeInput.value = 100;
     
             trackContainer.appendChild(numericVolumeInput);
+
+            const playButton = document.createElement('button');
+            playButton.innerText = 'Play';
+            playButton.addEventListener('click', function() {
+                const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
+                if (audioElements[audioIndex]) {
+                    audioElements[audioIndex].play();
+                }
+            });
+            trackContainer.appendChild(playButton);
 
             
             volumeSlider.addEventListener('input', function() {
@@ -302,90 +312,105 @@
         ////
 
         async function playMusic() {
-            // reset the completed audio
-            completedAudios = 0;
-            
-            // Ensure there's selected audio file(s)
-            if (audioElements.length) {
+            try
+            {
+                // reset the completed audio
+                completedAudios = 0;
+                
+                // Ensure there's selected audio file(s)
+                if (audioElements.length) {
 
-                // start playing them all
-                for (let i = 0; i < audioElements.length; i++) {
-                    const audioElement = audioElements[i];
+                    // start playing them all
+                    for (let i = 0; i < audioElements.length; i++) {
+                        const audioElement = audioElements[i];
 
-                    if (audioElement && audioElement.src) {
-                        // Resume the AudioContext first if necessary
-                        if (audioContext.state === "suspended") {
-                            await audioContext.resume();
-                        }
+                        if (audioElement && audioElement.src) {
+                            // Resume the AudioContext first if necessary
+                            if (audioContext.state === "suspended") {
+                                await audioContext.resume();
+                            }
 
-                        // Create or reconnect the analyser
-                        if (!audioAnalysers[i]) {
-                            audioAnalysers[i] = audioContext.createAnalyser();
-                            
-                            const audioSourceNode = audioContext.createMediaElementSource(audioElement);
+                            // Create or reconnect the analyser
+                            if (!audioAnalysers[i]) {
+                                audioAnalysers[i] = audioContext.createAnalyser();
+                                
+                                const audioSourceNode = audioContext.createMediaElementSource(audioElement);
 
-                            // Connect the source to the analyser for visualization
-                            audioSourceNode.connect(audioAnalysers[i]);
+                                // Connect the source to the analyser for visualization
+                                audioSourceNode.connect(audioAnalysers[i]);
 
-                            // Connect the source directly to the audioDestination for recording
-                            audioSourceNode.connect(audioDestination);
+                                // Connect the source directly to the audioDestination for recording
+                                audioSourceNode.connect(audioDestination);
 
-                            // Connect the analyser to the context's destination (speakers) for live playback
-                            audioAnalysers[i].connect(audioContext.destination);
-                        }
+                                // Connect the analyser to the context's destination (speakers) for live playback
+                                audioAnalysers[i].connect(audioContext.destination);
+                            }
 
-                        audioAnalysers[i].fftSize = 256;
-                        const bufferLength = audioAnalysers[i].frequencyBinCount; // Use the correct analyser from the array
-                        dataArrays[i] = new Uint8Array(bufferLength);
+                            audioAnalysers[i].fftSize = 256;
+                            const bufferLength = audioAnalysers[i].frequencyBinCount; // Use the correct analyser from the array
+                            dataArrays[i] = new Uint8Array(bufferLength);
 
 
-                        // make sure the previous ended events are disconnected
-                        removeAllListeners(audioElement, 'ended');
+                            // make sure the previous ended events are disconnected
+                            removeAllListeners(audioElement, 'ended');
 
-                        // add a listener to stop recording once all playback completes
-                        addListener(
-                            audioElement,
-                            'ended',
-                            function(innerEvent)
-                            {
-                                completedAudios++;
-                                if (completedAudios >= audioElements.length) {
-                                    if (isRecording) {
-                                        toggleRecording(); // This will stop the recording
+                            // add a listener to stop recording once all playback completes
+                            addListener(
+                                audioElement,
+                                'ended',
+                                function(innerEvent)
+                                {
+                                    completedAudios++;
+                                    if (completedAudios >= audioElements.length) {
+                                        if (isRecording) {
+                                            toggleRecording(); // This will stop the recording
+                                        }
                                     }
                                 }
-                            }
-                        );
+                            );
 
-                        audioElement.play();
+                            audioElement.play().then(() => {
+                                // Audio started playing
+                            }).catch((error) => {
+                                if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+                                    alert('There was an issue playing audio on your device. Please try again.');
+                                } else {
+                                    alert('Playback failed. Please try again.');
+                                }
+                            });
+                        }
+                        else
+                        {
+                            // flag invalid audios as completed playing
+                            completedAudios++;
+                        }
                     }
-                    else
-                    {
-                        // flag invalid audios as completed playing
-                        completedAudios++;
+
+                    // Handle aspect ratio for visualization
+                    let width = window.innerWidth;
+                    let height = window.innerWidth;
+
+                    switch (visualizerDrawRatio) {
+                        case 'square':
+                            height = window.innerWidth; // 1:1
+                            break;
+                        case 'mobile':
+                            height = (window.innerWidth * 16) / 9; // 9:16
+                            break;
+                        case 'cinema':
+                            height = (window.innerWidth * 9) / 21; // 21:9
+                            break;
                     }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    animateVisualizer();
                 }
-
-                // Handle aspect ratio for visualization
-                let width = window.innerWidth;
-                let height = window.innerWidth;
-
-                switch (visualizerDrawRatio) {
-                    case 'square':
-                        height = window.innerWidth; // 1:1
-                        break;
-                    case 'mobile':
-                        height = (window.innerWidth * 16) / 9; // 9:16
-                        break;
-                    case 'cinema':
-                        height = (window.innerWidth * 9) / 21; // 21:9
-                        break;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-
-                animateVisualizer();
+            }
+            catch (err)
+            {
+                handleError(err);
             }
         }
         
@@ -568,17 +593,36 @@
 
             const combinedStream = new MediaStream([...videoStream.getTracks(), ...audioDestination.stream.getTracks()]);
 
-            mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+            let mimeTypeSupported = "";
+            let fileExtension = "";
+            if (MediaRecorder.isTypeSupported('video/mp4'))
+            {
+                mimeTypeSupported = 'video/mp4';
+                fileExtension = "mp4"
+            }
+            else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus'))
+            {
+                // Use webm as a fallback for PC users, for instance
+                mimeTypeSupported = 'video/webm;codecs=vp8,opus';
+                fileExtension = "webm";
+            }
+            else
+            {
+                alert("No supported recording mimetypes on your device, sorry.");
+                return;
+            }
+
+            mediaRecorder = new MediaRecorder(combinedStream, { mimeType: mimeTypeSupported });
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size) {
                     chunks.push(event.data);
                 }
             };
             mediaRecorder.onstop = () => {
-                let blob = new Blob(chunks, { type: 'video/webm' });
+                let blob = new Blob(chunks, { type: mimeTypeSupported });
                 let url = URL.createObjectURL(blob);
                 document.getElementById('downloadLink').href = url;
-                document.getElementById('downloadLink').download = 'visualizer.webm';
+                document.getElementById('downloadLink').download = 'visualizer.' + fileExtension;
             };
             mediaRecorder.start();
 
@@ -592,14 +636,21 @@
         }
 
         function toggleRecording() {
-            if (!isRecording) {
-                startRecording();
-                document.getElementById('toggleRecord').textContent = "Stop Recording";
-                isRecording = true;
-            } else {
-                stopRecording();
-                document.getElementById('toggleRecord').textContent = "Start Recording";
-                isRecording = false;
+            try
+            {
+                if (!isRecording) {
+                    startRecording();
+                    document.getElementById('toggleRecord').textContent = "Stop Recording";
+                    isRecording = true;
+                } else {
+                    stopRecording();
+                    document.getElementById('toggleRecord').textContent = "Start Recording";
+                    isRecording = false;
+                }
+            }
+            catch (err)
+            {
+                handleError(err);
             }
         }
         function stopRecording() {
@@ -617,6 +668,11 @@
                 mediaRecorder.stop();
             }
         }   
+
+        function handleError(error)
+        {
+            alert("Error occured, message = " + error.message);
+        }
     </script>
 </body>
 </html>
