@@ -18,25 +18,34 @@
     <select id="visualizerTypeDropdown">
         <option value="vertical">Vertical Bars</option>
         <option value="horizontal">Horizontal Bars</option>
+        <option value="circularbar">Circular (Bars)</option>
         <option value="circularlin">Circular (Linear)</option>
     </select>
-    <select id="aspectRatioDropdown">
+    <select id="aspectRatioDropdown" onchange="VisualizerDrawRatio = document.getElementById('aspectRatioDropdown').value">
         <option value="square">Square (1:1)</option>
         <option value="mobile">Mobile Vertical (9:16)</option>
         <option value="cinema">Cinema Horizontal (21:9)</option>
     </select>
     <div id="colorOptions">
-        <label>Background Color:</label> <br />
-        <input type="color" id="backgroundColor" value="#000000"> <br />
-        <input type="range" id="backgroundAlpha" min="0" max="1" step="0.01" value="1"> <br />
+        <label>Background Color and Alpha:</label> <br />
+        <input type="color" id="backgroundColor" value="#000000" />
+        <input type="range" id="backgroundAlpha" min="0" max="1" step="0.01" value="1" />
+        <input type="number" id="backgroundAlphaNumeric" min="0" max="100" step="1" value="100" /><br />
         
-        <label>Bar/Line Color (low):</label> <br />
-        <input type="color" id="lowColor" value="#FF0000"> <br />
-        <input type="range" id="lowAlpha" min="0" max="1" step="0.01" value="1"> <br />
+        <label>Bar/Line Color and Alpha (high):</label> <br />
+        <input type="color" id="highColor" value="#FF0000" />
+        <input type="range" id="highAlpha" min="0" max="1" step="0.01" value="1" />
+        <input type="number" id="highAlphaNumeric" min="0" max="100" step="1" value="100" /><br />
         
-        <label>Bar/Line Color (high):</label> <br />
-        <input type="color" id="highColor" value="#FF0000"> <br />
-        <input type="range" id="highAlpha" min="0" max="1" step="0.01" value="1"> <br />
+        <label>Bar/Line Color and Alpha (low):</label> <br />
+        <input type="color" id="lowColor" value="#FF0000" />
+        <input type="range" id="lowAlpha" min="0" max="1" step="0.01" value="1" />
+        <input type="number" id="lowAlphaNumeric" min="0" max="100" step="1" value="100" /><br />
+
+        <label>Speed:</label> <br />
+        <input type="range" id="visualizerSpeed1" min="0" max="5" step="0.01" value="0.50" />
+        <input type="number" id="visualizerSpeed1Numeric" min="0" max="500" step="1" value="50" /><br />
+        <label><input type="checkbox" id="visualizerSpeed1Direction" /> Reverse</label>
     </div>
     <button id="toggleRecord" onclick="toggleRecording()">Start Recording</button>
     <a id="downloadLink" href="#">Download Video</a>
@@ -55,13 +64,108 @@
         let chunks = [];
         let mediaRecorder;
 
-        // COLORS
-        const backgroundColorPicker = document.getElementById('backgroundColor');
-        const backgroundAlphaSlider = document.getElementById('backgroundAlpha');
-        const highColorPicker = document.getElementById('highColor');
-        const highAlphaSlider = document.getElementById('highAlpha');
-        const lowColorPicker = document.getElementById('lowColor');
-        const lowAlphaSlider = document.getElementById('lowAlpha');
+        // used to track when all tracks complete
+        let CompletedAudios = 0;
+
+        // basic visualizer settings
+        let VisualizerDrawRatio = document.getElementById('aspectRatioDropdown').value;
+        let VisualizerType = document.getElementById('visualizerTypeDropdown').value;
+        let RotationalSpeed = 0;
+        updateVisualizerSpeed();
+
+        // colors
+        let VisualizerBackgroundColor = "#000000";
+        let VisualizerBackgroundAlpha = 0;
+        let VisualizerHighColor = "#000000";
+        let VisualizerHighAlpha = 0;
+        let VisualizerLowColor = "#000000";
+        let VisualizerLowAlpha = 0;
+        updateBackgroundColor();
+        updateBackgroundAlpha();
+        updateHighColor();
+        updateHighAlpha();
+        updateLowColor();
+        updateLowAlpha();
+
+        // add event handlers
+        document.getElementById('visualizerTypeDropdown').addEventListener('change', function() {
+            VisualizerType = document.getElementById('visualizerTypeDropdown').value;
+        });
+        document.getElementById('backgroundColor').addEventListener('input', updateBackgroundColor);
+        document.getElementById('backgroundAlpha').addEventListener('input', function() {
+            document.getElementById('backgroundAlphaNumeric').value = parseInt(document.getElementById('backgroundAlpha').value * 100);
+            updateBackgroundAlpha()
+        });
+        document.getElementById('backgroundAlphaNumeric').addEventListener('input',  function() {
+            document.getElementById('backgroundAlpha').value = document.getElementById('backgroundAlphaNumeric').value / 100;
+            updateBackgroundAlpha();
+        });
+        document.getElementById('highColor').addEventListener('input', updateHighColor);
+        document.getElementById('highAlpha').addEventListener('input', function() {
+            document.getElementById('highAlphaNumeric').value = parseInt(document.getElementById('highAlpha').value * 100);
+            updateHighAlpha();
+        });
+        document.getElementById('highAlphaNumeric').addEventListener('input',  function() {
+            document.getElementById('highAlpha').value = document.getElementById('highAlphaNumeric').value / 100;
+            updateHighAlpha();
+        });
+        document.getElementById('lowColor').addEventListener('input', updateLowColor);
+        document.getElementById('lowAlpha').addEventListener('input',  function() {
+            document.getElementById('lowAlphaNumeric').value = parseInt(document.getElementById('lowAlpha').value * 100);
+            updateLowAlpha();
+        });
+        document.getElementById('lowAlphaNumeric').addEventListener('input',  function() {
+            document.getElementById('lowAlpha').value = document.getElementById('lowAlphaNumeric').value / 100;
+            updateLowAlpha();
+        });
+        document.getElementById('visualizerSpeed1').addEventListener('input', function(){
+            document.getElementById('visualizerSpeed1Numeric').value = document.getElementById('visualizerSpeed1').value * 100;
+            updateVisualizerSpeed();
+        });
+        document.getElementById('visualizerSpeed1Numeric').addEventListener('input', function(){
+            document.getElementById('visualizerSpeed1').value = document.getElementById('visualizerSpeed1Numeric').value / 100;
+            updateVisualizerSpeed();
+        });
+        document.getElementById('visualizerSpeed1Direction').addEventListener('input', updateVisualizerSpeed);
+
+
+        // circular visualizer
+        let rotationAngle = 0; // Initial rotation angle
+
+        function updateVisualizerSpeed()
+        {
+            RotationalSpeed = (document.getElementById('visualizerSpeed1').value / 100) * (document.getElementById('visualizerSpeed1Direction').checked ? -1 : 1);
+        }
+
+        function updateBackgroundColor()
+        {
+            VisualizerBackgroundColor = document.getElementById('backgroundColor').value;;
+        }
+
+        function updateBackgroundAlpha()
+        {
+            VisualizerBackgroundAlpha = parseFloat(document.getElementById('backgroundAlpha').value);
+        }
+
+        function updateHighColor()
+        {
+            VisualizerHighColor = document.getElementById('highColor').value;
+        }
+
+        function updateLowColor()
+        {
+            VisualizerLowColor = document.getElementById('lowColor').value;
+        }
+
+        function updateHighAlpha()
+        {
+            VisualizerHighAlpha = parseFloat(document.getElementById('highAlpha').value);
+        }
+
+        function updateLowAlpha()
+        {
+            VisualizerLowAlpha = parseFloat(document.getElementById('lowAlpha').value);
+        }
 
         function addTrackInput() {
             const trackContainer = document.createElement('div');
@@ -80,13 +184,6 @@
             volumeSlider.step = 0.01;
             volumeSlider.value = 1;
 
-            volumeSlider.addEventListener('input', function() {
-                const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
-                if (audioElements[audioIndex]) {
-                    audioElements[audioIndex].volume = volumeSlider.value;
-                }
-                numericVolumeInput.value = volumeSlider.value;
-            });
             trackContainer.appendChild(volumeSlider);
 
             
@@ -97,16 +194,25 @@
             numericVolumeInput.step = 1;
             numericVolumeInput.value = 100;
     
-            // Update the slider when the numeric input value changes
-            numericVolumeInput.addEventListener('input', function() {
-                volumeSlider.value = numericVolumeInput.value / 100;
+            trackContainer.appendChild(numericVolumeInput);
+
+            
+            volumeSlider.addEventListener('input', function() {
                 const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
                 if (audioElements[audioIndex]) {
-                    audioElements[audioIndex].volume = numericVolumeInput.value;
+                    audioElements[audioIndex].volume = parseFloat(volumeSlider.value);
+                }
+                numericVolumeInput.value = parseInt(volumeSlider.value * 100);
+            });
+            
+            numericVolumeInput.addEventListener('input', function() {
+                volumeSlider.value = numericVolumeInput.value / 100;
+
+                const audioIndex = [...trackContainer.parentNode.children].indexOf(trackContainer);
+                if (audioElements[audioIndex]) {
+                    audioElements[audioIndex].volume = parseFloat(volumeSlider.value);
                 }
             });
-
-            trackContainer.appendChild(numericVolumeInput);
 
             document.getElementById('tracksContainer').appendChild(trackContainer);
         }
@@ -124,6 +230,9 @@
         }
 
         async function playMusic() {
+            // reset the completed audio
+            CompletedAudios = 0;
+            
             // Ensure there's selected audio file(s)
             if (audioElements.length) {
 
@@ -157,16 +266,31 @@
                         const bufferLength = audioAnalysers[i].frequencyBinCount; // Use the correct analyser from the array
                         dataArrays[i] = new Uint8Array(bufferLength);
 
+                        audioElement.addEventListener('ended', function(innerEvent) {
+                            CompletedAudios += 1;
+                            if (CompletedAudios >= audioElements.length) {
+                                if (isRecording) {
+                                    toggleRecording(); // This will stop the recording
+                                }
+                            }
+
+                            innerEvent.currentTarget.removeEventListener('ended', innerEvent.currentTarget); // Remove this listener once executed
+                        });
+
                         audioElement.play();
+                    }
+                    else
+                    {
+                        // flag invalid audios as completed playing
+                        CompletedAudios++;
                     }
                 }
 
                 // Handle aspect ratio for visualization
-                const ratio = document.getElementById('aspectRatioDropdown').value;
                 let width = window.innerWidth;
                 let height = window.innerWidth;
 
-                switch (ratio) {
+                switch (VisualizerDrawRatio) {
                     case 'square':
                         height = window.innerWidth; // 1:1
                         break;
@@ -181,10 +305,6 @@
                 canvas.width = width;
                 canvas.height = height;
 
-                for (const audioElement of audioElements) {
-                    audioElement.play();
-                }
-
                 animateVisualizer();
             }
         }
@@ -194,21 +314,28 @@
         }
 
         function interpolateColors(ratio) {
-            const r1 = parseInt(lowColorPicker.value.slice(1, 3), 16);
-            const g1 = parseInt(lowColorPicker.value.slice(3, 5), 16);
-            const b1 = parseInt(lowColorPicker.value.slice(5, 7), 16);
+            const r1 = parseInt(VisualizerLowColor.slice(1, 3), 16);
+            const g1 = parseInt(VisualizerLowColor.slice(3, 5), 16);
+            const b1 = parseInt(VisualizerLowColor.slice(5, 7), 16);
 
-            const r2 = parseInt(highColorPicker.value.slice(1, 3), 16);
-            const g2 = parseInt(highColorPicker.value.slice(3, 5), 16);
-            const b2 = parseInt(highColorPicker.value.slice(5, 7), 16);
+            const r2 = parseInt(VisualizerHighColor.slice(1, 3), 16);
+            const g2 = parseInt(VisualizerHighColor.slice(3, 5), 16);
+            const b2 = parseInt(VisualizerHighColor.slice(5, 7), 16);
 
-            const r = r1 + (r2 - r1) * ratio;
-            const g = g1 + (g2 - g1) * ratio;
-            const b = b1 + (b2 - b1) * ratio;
-            const a = 255; //(255 * (lowAlphaSlider.value + (highAlphaSlider.value - lowAlphaSlider.value))) * ratio
+            const r = r1 + ((r2 - r1) * ratio);
+            const g = g1 + ((g2 - g1) * ratio);
+            const b = b1 + ((b2 - b1) * ratio);
+            const a = 255 * (VisualizerLowAlpha + ((VisualizerHighAlpha - VisualizerLowAlpha) * ratio))
 
             return `#${twoDigitHex(Math.floor(r))}${twoDigitHex(Math.floor(g))}${twoDigitHex(Math.floor(b))}${twoDigitHex(Math.floor(a))}`;
         }
+
+        function getLinearGradient(x1, y1, x2, y2, ratio1, ratio2) {
+            const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+            gradient.addColorStop(0, interpolateColors(ratio1));
+            gradient.addColorStop(1, interpolateColors(ratio2));
+            return gradient;
+        } 
 
         function animateVisualizer() {
             let combinedDataArray = [];
@@ -243,12 +370,12 @@
                 }
             }
 
-            const bgAlpha = backgroundAlphaSlider.value;
-            ctx.fillStyle = `${backgroundColorPicker.value}${twoDigitHex(Math.floor(bgAlpha * 255))}`;;
+            // "clear" canvas with a bg
+            ctx.fillStyle = `${VisualizerBackgroundColor}${twoDigitHex(Math.floor(VisualizerBackgroundAlpha * 255))}`;;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const visualizerType = document.getElementById('visualizerTypeDropdown').value;
-            if(visualizerType === "vertical")
+            // reanimate based on the visualizer selected
+            if(VisualizerType === "vertical")
             {
                 
                 const barWidth = (canvas.width / combinedDataArray.length);
@@ -264,7 +391,7 @@
                     x += barWidth + 1;
                 }
             }
-            else if(visualizerType === "horizontal")
+            else if(VisualizerType === "horizontal")
             {
 
                 const barHeight = canvas.height / combinedDataArray.length;
@@ -277,8 +404,34 @@
                     y += barHeight + 1;
                 }
             }
-            else if(visualizerType === "circularlin")
+            else if(VisualizerType === "circularbar")
             {
+                rotationAngle += RotationalSpeed;
+
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const radius = Math.min(centerX, centerY); // Making sure the circle fits in the canvas
+                const barWidth = 2 * Math.PI / combinedDataArray.length;
+
+                for (let i = 0; i < combinedDataArray.length; i++) {
+                    const currentHeight = (combinedDataArray[i] / 256);
+                    const barHeight = currentHeight * radius; // Normalize the bar height
+                    const angle = (i * barWidth) + rotationAngle; 
+                    const x = centerX + barHeight * Math.cos(angle);
+                    const y = centerY + barHeight * Math.sin(angle);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY);
+                    ctx.lineTo(x, y);
+                    ctx.strokeStyle = interpolateColors(currentHeight);
+                    ctx.lineWidth = 4; //(2 * Math.PI * radius / combinedDataArray.length); // Setting the width so bars won't overlap
+                    ctx.stroke();
+                }
+            }
+            else if(VisualizerType === "circularlin")
+            {
+                rotationAngle += RotationalSpeed;
+
                 const centerX = canvas.width / 2;
                 const centerY = canvas.height / 2;
                 const maxRadius = Math.min(centerX, centerY) * 0.8; // This is the maximum potential radius
@@ -289,29 +442,33 @@
                 for (let i = 0; i < combinedDataArray.length; i++) {
                     const heightOfMax = (combinedDataArray[i] / 256);
                     const barHeight = heightOfMax * (maxRadius - baseRadius); // Subtract baseRadius to make bars smaller at zero volume
-                    const x = centerX + (baseRadius + barHeight) * Math.cos(i * barWidth);
-                    const y = centerY + (baseRadius + barHeight) * Math.sin(i * barWidth);
+                    const angle = (i * barWidth) + rotationAngle; 
+                    const x = centerX + (baseRadius + barHeight) * Math.cos(angle);
+                    const y = centerY + (baseRadius + barHeight) * Math.sin(angle);
                     
                     points.push({x, y});
                 }
 
                 // Drawing lines between calculated points
+                let previousHeight = (combinedDataArray[0] / 256);
                 for(let i = 1; i < points.length; i++) {
-                    const heightOfMax = (combinedDataArray[i] / 256);
+                    const currentHeight = (combinedDataArray[i] / 256);
 
                     ctx.beginPath();
                     ctx.moveTo(points[i-1].x, points[i-1].y);
                     ctx.lineTo(points[i].x, points[i].y);
-                    ctx.strokeStyle = interpolateColors(heightOfMax);
+                    ctx.strokeStyle = getLinearGradient(points[i-1].x, points[i-1].y, points[i].x, points[i].y, previousHeight, currentHeight)
                     ctx.lineWidth = 2;
                     ctx.stroke();
+                    previousHeight = currentHeight;
                 }
 
-                const heightOfMax = (combinedDataArray[0] / 256);
+                currentHeight = (combinedDataArray[0] / 256);
                 ctx.beginPath();
                 ctx.moveTo(points[points.length-1].x, points[points.length-1].y);
                 ctx.lineTo(points[0].x, points[0].y);
-                ctx.strokeStyle = interpolateColors(heightOfMax);
+                //ctx.strokeStyle = interpolateColors(heightOfMax);
+                ctx.strokeStyle = getLinearGradient(points[points.length-1].x, points[points.length-1].y, points[0].x, points[0].y, previousHeight, currentHeight)
                 ctx.lineWidth = 2;
                 ctx.stroke();
             }
@@ -319,33 +476,6 @@
 
         function startRecording() {
             let videoStream = canvas.captureStream(30);  // 30 FPS
-
-            let audioStreams = [];
-            let completedAudios = 0; // To track the number of audios that have ended
-
-            for (let i = 0; i < audioElements.length; i++) {
-                const currentAudio = audioElements[i];
-
-                currentAudio.addEventListener('canplaythrough', function() {
-                    if (!currentAudio._handledCanPlayThrough) { // Ensure the event only triggers once for each audio
-                        const audioStream = currentAudio.captureStream();
-                        audioStreams.push(audioStream);
-
-                        currentAudio.play();
-
-                        currentAudio.addEventListener('ended', function() {
-                            completedAudios += 1;
-                            if (completedAudios === audioElements.length) {
-                                if (isRecording) {
-                                    toggleRecording(); // This will stop the recording
-                                }
-                            }
-
-                            currentAudio.removeEventListener('ended', arguments.callee); // Remove this listener once executed
-                        });
-                    }
-                });
-            }
 
             const combinedStream = new MediaStream([...videoStream.getTracks(), ...audioDestination.stream.getTracks()]);
 
@@ -368,7 +498,7 @@
             
             for (let i = 0; i < audioElements.length; i++) {
                 const currentAudio = audioElements[i];
-                currentAudio._handledCanPlayThrough = true;
+                
             }
         }
 
