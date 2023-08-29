@@ -14,19 +14,26 @@
 </head>
 <body>
     <button onclick="addTrackInput()">Add Another Track</button>
-    <div id="tracksContainer"></div>
-    <select id="visualizerTypeDropdown">
-        <option value="vertical">Vertical Bars</option>
-        <option value="horizontal">Horizontal Bars</option>
-        <option value="circularbar">Circular (Bars)</option>
-        <option value="circularlin">Circular (Linear)</option>
-    </select>
-    <select id="aspectRatioDropdown" onchange="VisualizerDrawRatio = document.getElementById('aspectRatioDropdown').value">
-        <option value="square">Square (1:1)</option>
-        <option value="mobile">Mobile Vertical (9:16)</option>
-        <option value="cinema">Cinema Horizontal (21:9)</option>
-    </select>
+    <div>
+        <h3>Tracks</h3>
+        <div id="tracksContainer"></div>
+    </div>
+    <div>
+        <h3>General options</h3>
+        <select id="visualizerTypeDropdown">
+            <option value="vertical">Vertical Bars</option>
+            <option value="horizontal">Horizontal Bars</option>
+            <option value="circularbar">Circular (Bars)</option>
+            <option value="circularlin">Circular (Linear)</option>
+        </select>
+        <select id="aspectRatioDropdown" onchange="visualizerDrawRatio = document.getElementById('aspectRatioDropdown').value">
+            <option value="square">Square (1:1)</option>
+            <option value="mobile">Mobile Vertical (9:16)</option>
+            <option value="cinema">Cinema Horizontal (21:9)</option>
+        </select>
+    </div>
     <div id="colorOptions">
+        <h3>Color options</h3>
         <label>Background Color and Alpha:</label> <br />
         <input type="color" id="backgroundColor" value="#000000" />
         <input type="range" id="backgroundAlpha" min="0" max="1" step="0.01" value="1" />
@@ -42,10 +49,21 @@
         <input type="range" id="lowAlpha" min="0" max="1" step="0.01" value="1" />
         <input type="number" id="lowAlphaNumeric" min="0" max="100" step="1" value="100" /><br />
 
-        <label>Speed:</label> <br />
-        <input type="range" id="visualizerSpeed1" min="0" max="5" step="0.01" value="0.50" />
-        <input type="number" id="visualizerSpeed1Numeric" min="0" max="500" step="1" value="50" /><br />
-        <label><input type="checkbox" id="visualizerSpeed1Direction" /> Reverse</label>
+        <div>
+            <h3>Circle options</h3>
+            <label for="visualizerSpeed1Numeric">Rotational speed:</label> <br />
+            <input type="range" id="visualizerSpeed1" min="0" max="5" step="0.01" value="0.50" />
+            <input type="number" id="visualizerSpeed1Numeric" min="0" max="500" step="1" value="50" />
+            <label><input type="checkbox" id="visualizerSpeed1Direction" /> Reverse</label><br />
+            
+            <label for="centerGapNumeric">Center gap (%):</label> <br />
+            <input type="range" id="centerGap" min="0" max="1" step="0.01" value="0.20" />
+            <input type="number" id="centerGapNumeric" min="0" max="100" step="1" value="20" /><br />
+            
+            <label for="lineSizeNumeric">Line size:</label> <br />
+            <input type="range" id="lineSize" min="0" max="25" step="0.1" value="4" />
+            <input type="number" id="lineSizeNumeric" min="0" max="25" step="0.1" value="4" /><br />
+        <div>
     </div>
     <button id="toggleRecord" onclick="toggleRecording()">Start Recording</button>
     <a id="downloadLink" href="#">Download Video</a>
@@ -65,21 +83,26 @@
         let mediaRecorder;
 
         // used to track when all tracks complete
-        let CompletedAudios = 0;
+        let completedAudios = 0;
 
         // basic visualizer settings
-        let VisualizerDrawRatio = document.getElementById('aspectRatioDropdown').value;
-        let VisualizerType = document.getElementById('visualizerTypeDropdown').value;
-        let RotationalSpeed = 0;
+        let visualizerDrawRatio = document.getElementById('aspectRatioDropdown').value;
+        let visualizerType = document.getElementById('visualizerTypeDropdown').value;
+        let rotationalSpeed = 0;
         updateVisualizerSpeed();
 
+        // circle options
+        let rotationAngle = 0; // Initial rotation angle
+        let centerGapValue = 0.2;
+        let circularLineSize = 4;
+
         // colors
-        let VisualizerBackgroundColor = "#000000";
-        let VisualizerBackgroundAlpha = 0;
-        let VisualizerHighColor = "#000000";
-        let VisualizerHighAlpha = 0;
-        let VisualizerLowColor = "#000000";
-        let VisualizerLowAlpha = 0;
+        let visualizerBackgroundColor = "#000000";
+        let visualizerBackgroundAlpha = 0;
+        let visualizerHighColor = "#000000";
+        let visualizerHighAlpha = 0;
+        let visualizerLowColor = "#000000";
+        let visualizerLowAlpha = 0;
         updateBackgroundColor();
         updateBackgroundAlpha();
         updateHighColor();
@@ -89,7 +112,7 @@
 
         // add event handlers
         document.getElementById('visualizerTypeDropdown').addEventListener('change', function() {
-            VisualizerType = document.getElementById('visualizerTypeDropdown').value;
+            visualizerType = document.getElementById('visualizerTypeDropdown').value;
         });
         document.getElementById('backgroundColor').addEventListener('input', updateBackgroundColor);
         document.getElementById('backgroundAlpha').addEventListener('input', function() {
@@ -119,7 +142,7 @@
             updateLowAlpha();
         });
         document.getElementById('visualizerSpeed1').addEventListener('input', function(){
-            document.getElementById('visualizerSpeed1Numeric').value = document.getElementById('visualizerSpeed1').value * 100;
+            document.getElementById('visualizerSpeed1Numeric').value = parseInt(document.getElementById('visualizerSpeed1').value * 100);
             updateVisualizerSpeed();
         });
         document.getElementById('visualizerSpeed1Numeric').addEventListener('input', function(){
@@ -127,44 +150,66 @@
             updateVisualizerSpeed();
         });
         document.getElementById('visualizerSpeed1Direction').addEventListener('input', updateVisualizerSpeed);
+        document.getElementById('centerGap').addEventListener('input', function(){
+            document.getElementById('centerGapNumeric').value = parseInt(document.getElementById('centerGap').value * 100);
+            updateCenterGap();
+        });
+        document.getElementById('centerGapNumeric').addEventListener('input', function(){
+            document.getElementById('centerGap').value = document.getElementById('centerGapNumeric').value / 100;
+            updateCenterGap();
+        });
+        document.getElementById('lineSize').addEventListener('input', function(){
+            document.getElementById('lineSizeNumeric').value = document.getElementById('lineSize').value;
+            updateLineSize();
+        });
+        document.getElementById('lineSizeNumeric').addEventListener('input', function(){
+            document.getElementById('lineSize').value = document.getElementById('lineSizeNumeric').value;
+            updateLineSize();
+        });
 
+        function updateLineSize()
+        {
+            circularLineSize = parseFloat(document.getElementById('lineSize').value);
+        }
 
-        // circular visualizer
-        let rotationAngle = 0; // Initial rotation angle
+        function updateCenterGap()
+        {
+            centerGapValue = parseFloat(document.getElementById('centerGap').value);
+        }
 
         function updateVisualizerSpeed()
         {
-            RotationalSpeed = (document.getElementById('visualizerSpeed1').value / 100) * (document.getElementById('visualizerSpeed1Direction').checked ? -1 : 1);
+            rotationalSpeed = (document.getElementById('visualizerSpeed1').value / 100) * (document.getElementById('visualizerSpeed1Direction').checked ? -1 : 1);
         }
 
         function updateBackgroundColor()
         {
-            VisualizerBackgroundColor = document.getElementById('backgroundColor').value;;
+            visualizerBackgroundColor = document.getElementById('backgroundColor').value;;
         }
 
         function updateBackgroundAlpha()
         {
-            VisualizerBackgroundAlpha = parseFloat(document.getElementById('backgroundAlpha').value);
+            visualizerBackgroundAlpha = parseFloat(document.getElementById('backgroundAlpha').value);
         }
 
         function updateHighColor()
         {
-            VisualizerHighColor = document.getElementById('highColor').value;
+            visualizerHighColor = document.getElementById('highColor').value;
         }
 
         function updateLowColor()
         {
-            VisualizerLowColor = document.getElementById('lowColor').value;
+            visualizerLowColor = document.getElementById('lowColor').value;
         }
 
         function updateHighAlpha()
         {
-            VisualizerHighAlpha = parseFloat(document.getElementById('highAlpha').value);
+            visualizerHighAlpha = parseFloat(document.getElementById('highAlpha').value);
         }
 
         function updateLowAlpha()
         {
-            VisualizerLowAlpha = parseFloat(document.getElementById('lowAlpha').value);
+            visualizerLowAlpha = parseFloat(document.getElementById('lowAlpha').value);
         }
 
         function addTrackInput() {
@@ -229,9 +274,36 @@
             }
         }
 
+        //// special event handler handler so we can clear them
+        //
+        var _eventHandlers = {}; // somewhere global
+        //
+        const addListener = (node, event, handler, capture = false) => {
+            if (!_eventHandlers[event]) {
+                _eventHandlers[event] = []
+            }
+            // here we track the events and their nodes (note that we cannot
+            // use node as Object keys, as they'd get coerced into a string
+            _eventHandlers[event].push({ node: node, handler: handler, capture: capture })
+            node.addEventListener(event, handler, capture)
+        }
+        //
+        const removeAllListeners = (targetNode, event) => {
+            // remove listeners from the matching nodes
+            _eventHandlers[event]
+                ?.filter(({ node }) => node === targetNode)
+                .forEach(({ node, handler, capture }) => node.removeEventListener(event, handler, capture))
+
+            // update _eventHandlers global
+            _eventHandlers[event] = _eventHandlers[event]
+                ?.filter(({ node }) => node !== targetNode,)
+        }
+        //
+        ////
+
         async function playMusic() {
             // reset the completed audio
-            CompletedAudios = 0;
+            completedAudios = 0;
             
             // Ensure there's selected audio file(s)
             if (audioElements.length) {
@@ -266,23 +338,31 @@
                         const bufferLength = audioAnalysers[i].frequencyBinCount; // Use the correct analyser from the array
                         dataArrays[i] = new Uint8Array(bufferLength);
 
-                        audioElement.addEventListener('ended', function(innerEvent) {
-                            CompletedAudios += 1;
-                            if (CompletedAudios >= audioElements.length) {
-                                if (isRecording) {
-                                    toggleRecording(); // This will stop the recording
+
+                        // make sure the previous ended events are disconnected
+                        removeAllListeners(audioElement, 'ended');
+
+                        // add a listener to stop recording once all playback completes
+                        addListener(
+                            audioElement,
+                            'ended',
+                            function(innerEvent)
+                            {
+                                completedAudios++;
+                                if (completedAudios >= audioElements.length) {
+                                    if (isRecording) {
+                                        toggleRecording(); // This will stop the recording
+                                    }
                                 }
                             }
-
-                            innerEvent.currentTarget.removeEventListener('ended', innerEvent.currentTarget); // Remove this listener once executed
-                        });
+                        );
 
                         audioElement.play();
                     }
                     else
                     {
                         // flag invalid audios as completed playing
-                        CompletedAudios++;
+                        completedAudios++;
                     }
                 }
 
@@ -290,7 +370,7 @@
                 let width = window.innerWidth;
                 let height = window.innerWidth;
 
-                switch (VisualizerDrawRatio) {
+                switch (visualizerDrawRatio) {
                     case 'square':
                         height = window.innerWidth; // 1:1
                         break;
@@ -314,18 +394,18 @@
         }
 
         function interpolateColors(ratio) {
-            const r1 = parseInt(VisualizerLowColor.slice(1, 3), 16);
-            const g1 = parseInt(VisualizerLowColor.slice(3, 5), 16);
-            const b1 = parseInt(VisualizerLowColor.slice(5, 7), 16);
+            const r1 = parseInt(visualizerLowColor.slice(1, 3), 16);
+            const g1 = parseInt(visualizerLowColor.slice(3, 5), 16);
+            const b1 = parseInt(visualizerLowColor.slice(5, 7), 16);
 
-            const r2 = parseInt(VisualizerHighColor.slice(1, 3), 16);
-            const g2 = parseInt(VisualizerHighColor.slice(3, 5), 16);
-            const b2 = parseInt(VisualizerHighColor.slice(5, 7), 16);
+            const r2 = parseInt(visualizerHighColor.slice(1, 3), 16);
+            const g2 = parseInt(visualizerHighColor.slice(3, 5), 16);
+            const b2 = parseInt(visualizerHighColor.slice(5, 7), 16);
 
             const r = r1 + ((r2 - r1) * ratio);
             const g = g1 + ((g2 - g1) * ratio);
             const b = b1 + ((b2 - b1) * ratio);
-            const a = 255 * (VisualizerLowAlpha + ((VisualizerHighAlpha - VisualizerLowAlpha) * ratio))
+            const a = 255 * (visualizerLowAlpha + ((visualizerHighAlpha - visualizerLowAlpha) * ratio))
 
             return `#${twoDigitHex(Math.floor(r))}${twoDigitHex(Math.floor(g))}${twoDigitHex(Math.floor(b))}${twoDigitHex(Math.floor(a))}`;
         }
@@ -371,11 +451,11 @@
             }
 
             // "clear" canvas with a bg
-            ctx.fillStyle = `${VisualizerBackgroundColor}${twoDigitHex(Math.floor(VisualizerBackgroundAlpha * 255))}`;;
+            ctx.fillStyle = `${visualizerBackgroundColor}${twoDigitHex(Math.floor(visualizerBackgroundAlpha * 255))}`;;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // reanimate based on the visualizer selected
-            if(VisualizerType === "vertical")
+            if(visualizerType === "vertical")
             {
                 
                 const barWidth = (canvas.width / combinedDataArray.length);
@@ -391,7 +471,7 @@
                     x += barWidth + 1;
                 }
             }
-            else if(VisualizerType === "horizontal")
+            else if(visualizerType === "horizontal")
             {
 
                 const barHeight = canvas.height / combinedDataArray.length;
@@ -404,47 +484,56 @@
                     y += barHeight + 1;
                 }
             }
-            else if(VisualizerType === "circularbar")
+            else if(visualizerType === "circularbar")
             {
-                rotationAngle += RotationalSpeed;
+                rotationAngle += rotationalSpeed;
 
                 const centerX = canvas.width / 2;
                 const centerY = canvas.height / 2;
                 const radius = Math.min(centerX, centerY); // Making sure the circle fits in the canvas
                 const barWidth = 2 * Math.PI / combinedDataArray.length;
+                const baseRadius = centerGapValue * radius;
+                const maxRadius = ((1-centerGapValue) * radius);
 
                 for (let i = 0; i < combinedDataArray.length; i++) {
                     const currentHeight = (combinedDataArray[i] / 256);
-                    const barHeight = currentHeight * radius; // Normalize the bar height
+                    const barHeight = currentHeight * maxRadius; // Normalize the bar height
                     const angle = (i * barWidth) + rotationAngle; 
-                    const x = centerX + barHeight * Math.cos(angle);
-                    const y = centerY + barHeight * Math.sin(angle);
+
+                    // Adjusted starting point with offset
+                    const startX = centerX + (baseRadius * Math.cos(angle));
+                    const startY = centerY + (baseRadius * Math.sin(angle));
+
+                    // Calculating the end point of the bar
+                    const x = startX + (barHeight * Math.cos(angle));
+                    const y = startY + (barHeight * Math.sin(angle));
                     
                     ctx.beginPath();
-                    ctx.moveTo(centerX, centerY);
+                    ctx.moveTo(startX, startY);
                     ctx.lineTo(x, y);
                     ctx.strokeStyle = interpolateColors(currentHeight);
-                    ctx.lineWidth = 4; //(2 * Math.PI * radius / combinedDataArray.length); // Setting the width so bars won't overlap
+                    ctx.lineWidth = circularLineSize;
                     ctx.stroke();
                 }
             }
-            else if(VisualizerType === "circularlin")
+            else if(visualizerType === "circularlin")
             {
-                rotationAngle += RotationalSpeed;
+                rotationAngle += rotationalSpeed;
 
                 const centerX = canvas.width / 2;
                 const centerY = canvas.height / 2;
-                const maxRadius = Math.min(centerX, centerY) * 0.8; // This is the maximum potential radius
-                const baseRadius = maxRadius * 0.1; // This sets the base radius as 10% of the maximum radius
+                const radius = Math.min(centerX, centerY); // Making sure the circle fits in the canvas
+                const baseRadius = centerGapValue * radius;
+                const maxRadius = ((1-centerGapValue) * radius);
                 const barWidth = 2 * Math.PI / combinedDataArray.length;
                 let points = []; 
                 
                 for (let i = 0; i < combinedDataArray.length; i++) {
-                    const heightOfMax = (combinedDataArray[i] / 256);
-                    const barHeight = heightOfMax * (maxRadius - baseRadius); // Subtract baseRadius to make bars smaller at zero volume
+                    const currentHeight = (combinedDataArray[i] / 256);
+                    const barHeight = currentHeight * maxRadius; // Subtract baseRadius to make bars smaller at zero volume
                     const angle = (i * barWidth) + rotationAngle; 
-                    const x = centerX + (baseRadius + barHeight) * Math.cos(angle);
-                    const y = centerY + (baseRadius + barHeight) * Math.sin(angle);
+                    const x = centerX + ((baseRadius + barHeight) * Math.cos(angle));
+                    const y = centerY + ((baseRadius + barHeight) * Math.sin(angle));
                     
                     points.push({x, y});
                 }
@@ -458,7 +547,7 @@
                     ctx.moveTo(points[i-1].x, points[i-1].y);
                     ctx.lineTo(points[i].x, points[i].y);
                     ctx.strokeStyle = getLinearGradient(points[i-1].x, points[i-1].y, points[i].x, points[i].y, previousHeight, currentHeight)
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = circularLineSize;
                     ctx.stroke();
                     previousHeight = currentHeight;
                 }
@@ -469,7 +558,7 @@
                 ctx.lineTo(points[0].x, points[0].y);
                 //ctx.strokeStyle = interpolateColors(heightOfMax);
                 ctx.strokeStyle = getLinearGradient(points[points.length-1].x, points[points.length-1].y, points[0].x, points[0].y, previousHeight, currentHeight)
-                ctx.lineWidth = 2;
+                ctx.lineWidth = circularLineSize;
                 ctx.stroke();
             }
         }
